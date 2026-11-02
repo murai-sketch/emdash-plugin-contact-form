@@ -1,0 +1,181 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "contact-form",
+	// fatehack.bsky.social の DID（2026-11-02、`com.atproto.identity.resolveHandle` で解決）。
+	// **ハンドルではなく DID で持つ。**ハンドルは後から変えられるが、DID は変わらないため。
+	"publisher": "did:plc:q2tftapj3nkybwqimv7z6ju3",
+
+	"license": "MIT",
+	"author": { "name": "usefirst.studio" },
+	// セキュリティの連絡先。**この窓口はこのプラグイン自身が動かしている**
+	// （問い合わせフォーム）。フォームが壊れたときに報告が届かない形だが、
+	// **これでよいとユーザーが判断した**（2026-11-02）。変えるときは一声かける。
+	"security": { "url": "https://emdash.fatehack.com/contact" },
+	"name": "問い合わせフォーム",
+	"description": "問い合わせフォーム。送信の受け口・迷惑送信の防御・保存期間の後始末・運営者への通知・問い合わせた人への確認メールを、管理画面の設定だけで使えるようにする。",
+	"keywords": ["contact", "form", "turnstile", "email", "spam"],
+
+	// 信頼の約束。**増やすと、入れている人の再承認が必要になる。**
+	// - email:send      …… EmDash 側のメール配送（transport）を使う経路
+	// - network:request …… Turnstile の照合と、Cloudflare Email Sending の REST API
+	"capabilities": ["email:send", "network:request"],
+	"allowedHosts": ["challenges.cloudflare.com", "api.cloudflare.com"],
+
+	// 問い合わせの保存。索引に挙げた項目だけが絞り込みと並べ替えに使える。
+	"storage": {
+		"messages": {
+			"indexes": ["status", "createdAt", ["status", "createdAt"]]
+		}
+	},
+
+	"admin": {
+		"pages": [
+			{ "path": "/messages", "label": "問い合わせ", "icon": "inbox" },
+			{ "path": "/settings", "label": "設定", "icon": "settings" }
+		],
+		"widgets": [{ "id": "inbox", "title": "問い合わせ", "size": "half" }],
+
+		// ここに挙げた項目は、管理画面に設定フォームとして自動で出る。
+		// 読むのは ctx.settings.get("<キー>")。secret は保存時に暗号化され、
+		// 画面には書き戻されない（EMDASH_ENCRYPTION_KEY が要る）。
+		"settingsSchema": {
+			"siteName": {
+				"type": "string",
+				"label": "サイト名",
+				"description": "通知と確認メールの差出人表示、文面の {{site}} に使う。",
+				"default": ""
+			},
+			"notifyTo": {
+				"type": "email",
+				"label": "通知の宛先",
+				"description": "問い合わせが来たことを知らせる先。送信者の入力からは作らない。",
+				"placeholder": "you@example.com"
+			},
+			"senderAddress": {
+				"type": "email",
+				"label": "差出人のアドレス",
+				"description": "Email Sending を有効にしたドメインのアドレス。Cloudflare 経由のときは必須で、そのドメインでないと送信が弾かれる。",
+				"placeholder": "contact@example.com"
+			},
+			"allowedOrigin": {
+				"type": "url",
+				"label": "許す送信元",
+				"description": "空なら受け口と同じオリジンだけを許す。別ドメインのページから送るときだけ入れる。",
+				"default": ""
+			},
+
+			"turnstileSiteKey": {
+				"type": "string",
+				"label": "Turnstile のサイトキー",
+				"description": "フォームの画面に出す公開鍵。0x… で始まる。",
+				"default": ""
+			},
+			"turnstileSecretKey": {
+				"type": "secret",
+				"label": "Turnstile の秘密鍵",
+				"description": "これが無いと受け口は閉じたまま。素通しのフォームを公開しないため。"
+			},
+
+			"mailProvider": {
+				"type": "select",
+				"label": "メールの送り方",
+				"description": "EmDash 側のメール配送を使うか、Cloudflare Email Sending の API を直に叩くか。",
+				"options": [
+					{ "value": "emdash", "label": "EmDash のメール配送を使う" },
+					{ "value": "cloudflare", "label": "Cloudflare Email Sending（API トークン）" }
+				],
+				"default": "emdash"
+			},
+			"cloudflareAccountId": {
+				"type": "string",
+				"label": "Cloudflare のアカウントID",
+				"description": "ダッシュボードの右側に出る32桁の英数字。「Cloudflare Email Sending」を選んだときだけ使う。",
+				"default": ""
+			},
+			"cloudflareApiToken": {
+				"type": "secret",
+				"label": "Cloudflare の API トークン",
+				"description": "「Email Sending: Edit」の権限だけを付けたトークン。これ以外の権限は付けない。「Cloudflare Email Sending」を選んだときだけ使う。"
+			},
+
+			"autoReply": {
+				"type": "boolean",
+				"label": "問い合わせた人に確認メールを送る",
+				"description": "定型の受付メール。宛先は送信者の入力なので、件名に入力は混ぜない。",
+				"default": true
+			},
+			"autoReplySubject": {
+				"type": "string",
+				"label": "確認メールの件名",
+				"default": "お問い合わせを受け付けました"
+			},
+			"autoReplyBody": {
+				"type": "string",
+				"label": "確認メールの本文",
+				"description": "置き換わるのは {{name}} {{id}} {{received}} {{site}} の4つだけ。",
+				"multiline": true,
+				"default": "{{name}} 様\n\nお問い合わせをいただき、ありがとうございます。\n内容を確かに受け付けました。\n\n担当者が確認のうえ、改めてご連絡いたします。\n恐れ入りますが、しばらくお待ちください。\n\n受付ID：{{id}}\n受付日時：{{received}}\n\n※このメールは送信時に自動でお送りしています。\n\n{{site}}"
+			},
+			"autoReplyMessageHeading": {
+				"type": "string",
+				"label": "写しの見出し",
+				"description": "本文の写しを付けるときに、その前に置く見出し。",
+				"default": "いただいた内容"
+			},
+			"autoReplyIncludeMessage": {
+				"type": "boolean",
+				"label": "確認メールに、いただいた本文の写しを付ける",
+				"description": "付けると、Turnstile を通せる人が、選んだ宛先へ、選んだ文章を、あなたのドメインの差出人で届けられる。既定は付けない。",
+				"default": false
+			},
+
+			"retentionDays": {
+				"type": "number",
+				"label": "問い合わせを残す日数",
+				"description": "この日数を過ぎたものを毎日自動で削除する。プライバシーポリシーに書いた期間と必ず揃える。0 なら削除しない。",
+				"default": 365,
+				"min": 0,
+				"max": 3650
+			},
+			"perIpPerHour": {
+				"type": "number",
+				"label": "同じ送信元から1時間に何回まで",
+				"default": 3,
+				"min": 1,
+				"max": 1000
+			},
+			"perIpPerDay": {
+				"type": "number",
+				"label": "同じ送信元から1日に何回まで",
+				"default": 10,
+				"min": 1,
+				"max": 10000
+			},
+			"globalPerHour": {
+				"type": "number",
+				"label": "サイト全体で1時間に何回まで",
+				"description": "踏み台にされたときの蓋。",
+				"default": 60,
+				"min": 1,
+				"max": 100000
+			},
+			"minFillSeconds": {
+				"type": "number",
+				"label": "送信までの最短秒数",
+				"description": "フォームを開いてからこれより速い送信は機械として弾く。",
+				"default": 3,
+				"min": 0,
+				"max": 600
+			},
+			"formTtlSeconds": {
+				"type": "number",
+				"label": "フォームの有効期限（秒）",
+				"description": "古い札の使い回しを防ぐ。",
+				"default": 10800,
+				"min": 60,
+				"max": 604800
+			}
+		}
+	}
+}
