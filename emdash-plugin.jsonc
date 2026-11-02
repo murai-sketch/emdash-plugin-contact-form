@@ -6,6 +6,11 @@
 	// **ハンドルではなく DID で持つ。**ハンドルは後から変えられるが、DID は変わらないため。
 	"publisher": "did:plc:q2tftapj3nkybwqimv7z6ju3",
 
+	// ソースリポジトリ。レジストリの一覧に出る。
+	// **公開するときは、このリポジトリも公開にする**（入れる人が中身を読めないため）。
+	// 2026-11-02 時点では非公開。
+	"repo": "https://github.com/murai-sketch/emdash-plugin-contact-form",
+
 	"license": "MIT",
 	"author": { "name": "usefirst.studio" },
 	// セキュリティの連絡先。**この窓口はこのプラグイン自身が動かしている**
